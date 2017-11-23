@@ -137,13 +137,32 @@ public abstract class EnumeratingWhitelist extends Whitelist {
     }
 
     private static boolean is(String thisIdentifier, String identifier) {
-        return thisIdentifier.equals("*") || identifier.equals(thisIdentifier);
+        return isWildCard(thisIdentifier) || identifier.equals(thisIdentifier);
     }
 
+    private static boolean isWildCard(String identifier) {
+        return "*".equals(identifier);
+    }
+
+
     public static abstract class Signature implements Comparable<Signature> {
+        String cachedString = null;
+
+        /** Return the cachedString String representation of the signature.
+         *  This avoids redundant String work and reduces hash comparison time, since Strings keep their hashes.
+         */
+        public String getCachedString() {
+            String output = cachedString;
+            if (output == null) {
+                output = toString();
+                cachedString = output;
+            }
+            return output;
+        }
+
         /** Form as in {@link StaticWhitelist} entries. */
         @Override public abstract String toString();
-        final StringBuilder joinWithSpaces(StringBuilder b, String[] types) {
+        static StringBuilder joinWithSpaces(StringBuilder b, String[] types) {
             for (String type : types) {
                 b.append(' ').append(type);
             }
@@ -155,10 +174,10 @@ public abstract class EnumeratingWhitelist extends Whitelist {
             return r != 0 ? r : toString().compareTo(o.toString());
         }
         @Override public boolean equals(Object obj) {
-            return obj != null && obj.getClass() == getClass() && toString().equals(obj.toString());
+            return obj != null && obj.getClass() == getClass() && getCachedString().equals(((Signature)obj).getCachedString());
         }
         @Override public int hashCode() {
-            return toString().hashCode();
+            return getCachedString().hashCode();  // Strings store precomputed hash
         }
         abstract boolean exists() throws Exception;
         final Class<?> type(String name) throws Exception {
@@ -184,6 +203,11 @@ public abstract class EnumeratingWhitelist extends Whitelist {
         public MethodSignature(Class<?> receiverType, String method, Class<?>... argumentTypes) {
             this(getName(receiverType), method, argumentTypes(argumentTypes));
         }
+
+        String canonicalForm(Method m) {
+            return Signature.joinWithSpaces(new StringBuilder(getName(m.getDeclaringClass())).append(' ').append(m.getName()), argumentTypes(m.getParameterTypes()).toString();
+        }
+
         boolean matches(Method m) {
             return is(method, m.getName()) && getName(m.getDeclaringClass()).equals(receiverType) && Arrays.equals(argumentTypes(m.getParameterTypes()), argumentTypes);
         }
@@ -242,6 +266,11 @@ public abstract class EnumeratingWhitelist extends Whitelist {
         public NewSignature(Class<?> type, Class<?>... argumentTypes) {
             this(getName(type), argumentTypes(argumentTypes));
         }
+
+        static String canonicalize(Constructor c) {
+
+        }
+
         boolean matches(Constructor c) {
             return getName(c.getDeclaringClass()).equals(type) && Arrays.equals(argumentTypes(c.getParameterTypes()), argumentTypes);
         }
@@ -261,6 +290,10 @@ public abstract class EnumeratingWhitelist extends Whitelist {
         }
     }
 
+    public static String canonicalField(Field f) {
+
+    }
+
     public static class FieldSignature extends Signature {
         final String type, field;
         public FieldSignature(String type, String field) {
@@ -273,6 +306,11 @@ public abstract class EnumeratingWhitelist extends Whitelist {
         boolean matches(Field f) {
             return is(field, f.getName()) && getName(f.getDeclaringClass()).equals(type);
         }
+
+        public String canonicalForm(Field f) {
+            return "field "+getName(f.getDeclaringClass()) + ' ' + f.getName();
+        }
+
         @Override String signaturePart() {
             return type + ' ' + field;
         }
